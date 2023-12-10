@@ -1,12 +1,13 @@
+use colored::Colorize;
 use std::{fs::read_to_string, collections::BTreeSet};
 
-fn neighbors(x:usize, y:usize, max_x:usize, max_y:usize)  -> Vec<(usize, usize)> {
+fn neighbors(x:usize, y:usize, max_x:usize, max_y:usize)  -> Vec<(usize, usize, char)> {
     let mut neighbors: Vec<_> = Vec::new();
-    for (j, k) in [(-1, 0), (0, -1), (1, 0), (0, 1)] {
-        if let Some(n_y) = y.checked_add_signed(j) {
-            if let Some(n_x) = x.checked_add_signed(k) {
+    for (x_shift, y_shift, direction) in [(-1, 0, 'w'), (0, -1, 'n'), (1, 0, 'e' ), (0, 1,'s')] {
+        if let Some(n_y) = y.checked_add_signed(y_shift) {
+            if let Some(n_x) = x.checked_add_signed(x_shift) {
                 if n_y < max_y && n_x < max_x {
-                    neighbors.push((n_x, n_y));
+                    neighbors.push((n_x, n_y, direction));
                 }
             }
         }
@@ -25,11 +26,14 @@ fn get_next_coords(map: &Vec<Vec<char>>, x:usize, y: usize) -> Vec<(usize, usize
         'F' => vec![(x, y+1), (x+1, y)],
         'S' => {
             let start_neighbors = neighbors(x, y, map[0].len(), map.len());
-            //println!("start_neighbors: {:?}", start_neighbors);
             start_neighbors.iter()
                 .cloned()
-                .filter(|(n_x,n_y)|{
-                    get_next_coords(map, *n_x, *n_y).contains(&(x,y))
+                .filter_map(|(n_x,n_y, _)|{
+                    if get_next_coords(map, n_x, n_y).contains(&(x,y)) {
+                        Some((n_x, n_y))
+                    } else {
+                        None
+                    }
             }).collect()
          },
         _ => vec![]
@@ -38,139 +42,150 @@ fn get_next_coords(map: &Vec<Vec<char>>, x:usize, y: usize) -> Vec<(usize, usize
     foo
 }
 
-fn mark_map(map: &mut Vec<Vec<char>>, loop_coords: &BTreeSet<(usize, usize)>, x: usize, y: usize) -> char {
-    println!("recurse to {:?}, map:", (x, y));
-    for row in &*map {
-        println!("{:?}", row);
+fn get_start_pipe_type(map: &Vec<Vec<char>>, x: usize, y: usize) -> char {
+    let start_neighbors = neighbors(x, y, map[0].len(), map.len());
+    let start_neighbors: Vec<_> = start_neighbors.iter()
+        .cloned()
+        .filter(|(n_x,n_y, _)|{
+            get_next_coords(map, *n_x, *n_y).contains(&(x,y))
+    }).collect();
+
+    //println!("start_neighbors: {:?}", start_neighbors);
+
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 'n') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 's')
+    {
+         return '|';
     }
-    let mut found_edge = false;
-    let orig_loop;
-    if loop_coords.contains(&(x,y)) {
-        orig_loop = Some(map[y][x]);
-    } else {
-        orig_loop = None;
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 'e') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 'w')
+    {
+         return '-';
     }
-    //mark current "p" (in progress).
-    if orig_loop.is_some() {
-        map[y][x] = 'l';
-    } else {
-        map[y][x] = 'p';
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 'n') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 'e')
+    {
+         return 'L';
     }
 
-    //north: x+0, y-1
-    if y == 0 { //base case, found an edge.
-        found_edge = true;
-    } else {
-        //
-        'check_north: {
-            if map[y-1][x] == 'p' || map[y-1][x] == 'l' {
-                //cycle
-                break 'check_north;
-            }
-            if loop_coords.contains(&(x, y-1)) {
-                //moving north, can't pass '-' that is part of the loop.
-                if map[y-1][x] == '-' {
-                    break 'check_north;
-                }
-            }
-            //recurse
-            println!("head north from {:?} orig_loop: {:?}", (x, y), orig_loop);
-            if mark_map(map, loop_coords, x, y-1) == 'O' {
-                found_edge = true;
-            }
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 'n') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 'w')
+    {
+         return 'J';
+    }
+
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 's') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 'w')
+    {
+         return '7';
+    }
+
+    if start_neighbors.iter().any(|(_,_,dir)| *dir == 's') &&
+       start_neighbors.iter().any(|(_,_,dir)| *dir == 'e')
+    {
+         return 'F';
+    }
+
+    panic!("eh?")
+}
+
+
+fn generate_expanded_tile(expanded_map: &mut Vec<Vec<char>>, map: &Vec<Vec<char>>, x: usize, y: usize, pipe: char) {
+    match pipe {
+        '|' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+        },
+        '-' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['l','l','l']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+
+        },
+        'L' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['*','l','l']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+
+        },
+        'J' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['l','l','*']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+
+        },
+        '7' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['l','l','*']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+
+        },
+        'F' => {
+            expanded_map[y*3+0][x*3..x*3+3].copy_from_slice(&['*','*','*']);
+            expanded_map[y*3+1][x*3..x*3+3].copy_from_slice(&['*','l','l']);
+            expanded_map[y*3+2][x*3..x*3+3].copy_from_slice(&['*','l','*']);
+
+        },
+        'S' => {
+            let start_pipe = get_start_pipe_type(map, x, y);
+            //println!("Start Pipe: {:}", start_pipe);
+            generate_expanded_tile(expanded_map, map, x, y, start_pipe);
         }
-    }
-
-    //south: x+0, y+1
-    if y == map.len()-1 { //base case, found an edge.
-        found_edge = true;
-    } else {
-        //
-        'check_south: {
-            if map[y+1][x] == 'p' || map[y+1][x] == 'l' {
-                //cycle
-                break 'check_south;
-            }
-            if loop_coords.contains(&(x, y+1)) {
-                println!("next: {:?} = {:}", (x, y+1), map[y+1][x]);
-                //moving south, can't pass '-' that is part of the loop.
-                if map[y+1][x] == '-' {
-                    break 'check_south;
-                }
-            }
-            //recurse
-            println!("head south from {:?} orig_loop: {:?}", (x, y), orig_loop);
-            if mark_map(map, loop_coords, x, y+1) == 'O' {
-                found_edge = true;
-            }
-        }
-    }
-
-    //east: x+1, y
-    if x == map[0].len()-1 { //base case, found an edge.
-        found_edge = true;
-    } else {
-        //
-        'check_east: {
-            if map[y][x+1] == 'p' || map[y][x+1] == 'l' {
-                //cycle
-                break 'check_east;
-            }
-            if loop_coords.contains(&(x+1, y)) {
-                //moving east, can't pass '|' that is part of the loop.
-                if map[y][x+1] == '|' {
-                    break 'check_east;
-                }
-            }
-            //recurse
-            println!("head east from {:?} orig_loop: {:?}", (x, y), orig_loop);
-            if mark_map(map, loop_coords, x+1, y) == 'O' {
-                found_edge = true;
-            }
-        }
-    }
-
-    //west: x-1, y
-    if x == 0 { //base case, found an edge.
-        found_edge = true;
-    } else {
-        'check_west: {
-            if map[y][x-1] == 'p' || map[y][x-1] == 'l' {
-                //cycle
-                break 'check_west;
-            }
-            if loop_coords.contains(&(x-1, y)) {
-                //moving east, can't pass '|' that is part of the loop.
-                if map[y][x-1] == '|' {
-                    break 'check_west;
-                }
-            }
-            //recurse
-            println!("head west from {:?} orig_loop: {:?}", (x, y), orig_loop);
-            if mark_map(map, loop_coords, x-1, y) == 'O' {
-                found_edge = true;
-            }
-        }
-    }
-
-    if let Some(val) = orig_loop {
-        map[y][x] = val;
-    }
-
-    if found_edge {
-        return 'O';
-    } else {
-        return 'p';
+        _=> panic!("eh?")
     }
 }
 
-fn mark_all_in_progress(map: &mut Vec<Vec<char>>, mark: char) {
-    for x in 0..map[0].len() {
-        for y in 0..map.len() {
-            if map[x][y] == 'p' {
-                map[x][y] = mark;
-            }
+fn color_map(map: &mut Vec<Vec<char>>, x: usize, y: usize)  {
+    //base case: pipe loop
+    if map[y][x] == 'l' {
+        return;
+    }
+    //base case: already visited
+    if map[y][x] == 'O' {
+        return;
+    }
+
+    //println!("recurse {:?}", (x, y));
+    //print_map(map);
+
+    map[y][x] = 'O';
+
+    // check each direction, recurse if appropriate.
+    //north: x, y-1
+    if y != 0 {
+        color_map(map, x, y-1);
+    }
+
+    //east: x+1, y
+    if x+1 != map[0].len() {
+        color_map(map, x+1, y);
+    }
+
+    //south: x, y+1
+    if y+1 != map.len() {
+        color_map(map, x, y+1);
+    }
+
+    //west: x-1, y
+    if x != 0 {
+        color_map(map, x-1, y);
+    }
+}
+
+fn print_map (map: &Vec<Vec<char>>) {
+    for row in map {
+        for col in row {
+            let string = match col {
+                'O' => "O".blue(),
+                'I' => "I".red(),
+                'l' => "l".bright_green(),
+                '*' => "*".green(),
+                 x => x.to_string().white()
+            };
+            print!("{:}", string);
         }
+        println!();
     }
 }
 
@@ -221,30 +236,26 @@ fn main() {
         current_coords = next_coords;
     }
 
-    let mut marked_map = map.clone();
-    let mut outside_regions = 0;
-    for x in 0..marked_map[0].len() {
-        for y in 0..marked_map.len() {
-            if loop_coords.contains(&(x, y)) {
-                continue;
+    let mut expanded_map: Vec<Vec<char>> = vec![vec!['I'; map[0].len()*3]; map.len()*3];
+    for x in 0..map[0].len() {
+        for y in 0..map.len() {
+            if loop_coords.contains(&(x,y)) {
+                generate_expanded_tile(&mut expanded_map, &map, x, y, map[y][x]);
             }
-            if marked_map[x][y] == 'I' || marked_map[x][y] == 'O' {
-                continue;
-            }
-            let region = mark_map(&mut marked_map, &loop_coords, x, y);
-            if region == 'O' {
-                outside_regions +=1;
-                //debug
-                mark_all_in_progress(&mut marked_map, 'O');
-            } else {
-                mark_all_in_progress(&mut marked_map, 'I');
-            }
-
         }
     }
-    println!("marked map:");
-    for row in marked_map {
-        println!("{:?}", row);
-    }
-    println!("outside_regions: {:}", outside_regions);
+    println!("expanded map:");
+    print_map(&expanded_map);
+
+    //assumes 0,0 is outside the loop (it is for the given problem inputs)
+    //for big maps, this blows the stack. Use stacker to compensate instead of rewriting the whole thing on the heap.
+    stacker::grow(0x10000000, ||{
+        color_map(&mut expanded_map, 0, 0);
+    });
+
+    println!("colored map:");
+    print_map(&expanded_map);
+
+    let inner_tiles = expanded_map.iter().flatten().filter(|x| **x=='I').count() / 9;
+    println!("inner_tiles: {:}", inner_tiles);
 }
