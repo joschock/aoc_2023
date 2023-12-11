@@ -1,9 +1,9 @@
 use colored::Colorize;
-use std::{fs::read_to_string, collections::BTreeSet};
+use std::{fs::read_to_string, collections::HashSet};
 
 fn neighbors(x:usize, y:usize, max_x:usize, max_y:usize)  -> Vec<(usize, usize, char)> {
     let mut neighbors: Vec<_> = Vec::new();
-    for (x_shift, y_shift, direction) in [(-1, 0, 'w'), (0, -1, 'n'), (1, 0, 'e' ), (0, 1,'s')] {
+    for (x_shift, y_shift, direction) in [(1, 0, 'e' ), (0, 1,'s'), (-1, 0, 'w'), (0, -1, 'n'),] {
         if let Some(n_y) = y.checked_add_signed(y_shift) {
             if let Some(n_x) = x.checked_add_signed(x_shift) {
                 if n_y < max_y && n_x < max_x {
@@ -205,42 +205,31 @@ fn main() {
         }
     }
     println!("start: {:}:{:}", start_x, start_y);
-    let mut loop_coords: BTreeSet<(usize, usize)> = BTreeSet::new();
-    let mut current_coords = get_next_coords(&map, start_x, start_y);
-    let mut prev_coords = vec![(start_x, start_y)];
-    loop_coords.insert((start_x, start_y));
-    for coord in &current_coords {
-        loop_coords.insert(coord.clone());
-    }
-    for step in 0.. {
-        //println!("{:}: current: {:?}", step, current_coords);
-        let mut next_coords = Vec::new();
-        for (x, y) in &current_coords {
-            //println!(" char: {:}", map[*y][*x]);
-            let next = get_next_coords(&map, *x, *y);
-            //println!("   prev: {:?}, cur: {:?}, next:{:?}", prev_coords, current_coords, next);
-            next_coords.push(
-                next.iter()
-                    .filter(|(n_x, n_y)|
-                        !prev_coords.contains(&(*n_x, *n_y))
-                    )
-                    .nth(0).unwrap().clone()
-            );
-            loop_coords.insert(next_coords.last().unwrap().clone());
-        }
-        if next_coords[0] == next_coords[1] {
-            println!("step: {:}", step+2);
+    let mut pipe_loop_coords: Vec<(usize, usize)> = Vec::new();
+    let mut current_coords: (usize, usize) = *get_next_coords(&map, start_x, start_y).first().unwrap();
+    pipe_loop_coords.push((start_x, start_y));
+    pipe_loop_coords.push(current_coords);
+    for _step in 0.. {
+        let (x,y) = current_coords;
+        let next_coords = get_next_coords(&map, x, y);
+        let next_coords = next_coords.iter()
+            .filter(|(next_x, next_y)|
+                pipe_loop_coords[pipe_loop_coords.len()-2] != (*next_x, *next_y)
+            ).nth(0).unwrap().clone();
+
+        if next_coords == pipe_loop_coords[0] {
             break;
         }
-        prev_coords = current_coords;
+        pipe_loop_coords.push(next_coords);
         current_coords = next_coords;
     }
 
     //pt2 approach 1: expand and fill
+    let pipe_loop_coords_hash: HashSet<(usize, usize)> = pipe_loop_coords.iter().cloned().collect();
     let mut expanded_map: Vec<Vec<char>> = vec![vec!['I'; map[0].len()*3]; map.len()*3];
     for x in 0..map[0].len() {
         for y in 0..map.len() {
-            if loop_coords.contains(&(x,y)) {
+            if pipe_loop_coords_hash.contains(&(x,y)) {
                 generate_expanded_tile(&mut expanded_map, &map, x, y, map[y][x]);
             }
         }
@@ -276,7 +265,7 @@ fn main() {
         let mut scan_state: ScanState = ScanState::Outside;
         let mut x = 0;
         while x < row.len() {
-            if !loop_coords.contains(&(x, y)) {
+            if !pipe_loop_coords_hash.contains(&(x, y)) {
                 match scan_state {
                     ScanState::Inside => {row[x] = 'I'; inner_tiles += 1;}
                     ScanState::Outside => {row[x] = 'O'; }
@@ -312,4 +301,18 @@ fn main() {
     println!("\ncolored row_scan map:");
     print_map(&row_scan_map);
     println!("q2 row scan inner_tiles: {:}\n", inner_tiles);
+
+    //pt2. green's theorem
+    let mut green_sum: isize = 0;
+    for i in 0..pipe_loop_coords.len() {
+        let k = pipe_loop_coords[i];
+        let kplus = pipe_loop_coords[(i+1) % pipe_loop_coords.len()];
+
+        green_sum += (kplus.1*k.0) as isize - (k.1*kplus.0) as isize;
+    }
+    //Green's theorem expects you to go counter-clockwise, or the sign flips. Since we only care about magnitude, just
+    //take abs(), then it doesn't matter which direction we go.
+    green_sum = (green_sum/2).abs();
+    println!("green_sum: {:}", green_sum);
+    println!("q2 green inner_tiles: {:}", green_sum - ((pipe_loop_coords.len() as isize -4)/2 + 1));
 }
