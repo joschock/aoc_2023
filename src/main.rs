@@ -236,6 +236,7 @@ fn main() {
         current_coords = next_coords;
     }
 
+    //pt2 approach 1: expand and fill
     let mut expanded_map: Vec<Vec<char>> = vec![vec!['I'; map[0].len()*3]; map.len()*3];
     for x in 0..map[0].len() {
         for y in 0..map.len() {
@@ -253,9 +254,62 @@ fn main() {
         color_map(&mut expanded_map, 0, 0);
     });
 
-    println!("colored map:");
+    println!("\nexpanded colored map:");
     print_map(&expanded_map);
 
     let inner_tiles = expanded_map.iter().flatten().filter(|x| **x=='I').count() / 9;
-    println!("inner_tiles: {:}", inner_tiles);
+    println!("q2 expand and fill inner_tiles: {:}\n", inner_tiles);
+
+    //pt2 approach2: row scan
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
+    enum ScanState {
+        Outside,
+        Inside
+    }
+
+    let mut row_scan_map: Vec<Vec<char>> = map.clone();
+    row_scan_map[start_y][start_x] = get_start_pipe_type(&map, start_x, start_y);
+    println!("row_scan map:");
+    print_map(&row_scan_map);
+    let mut inner_tiles = 0;
+    for (y, row) in row_scan_map.iter_mut().enumerate() {
+        let mut scan_state: ScanState = ScanState::Outside;
+        let mut x = 0;
+        while x < row.len() {
+            if !loop_coords.contains(&(x, y)) {
+                match scan_state {
+                    ScanState::Inside => {row[x] = 'I'; inner_tiles += 1;}
+                    ScanState::Outside => {row[x] = 'O'; }
+                }
+            } else {
+                let mut toggle = false;
+                if row[x] == '|' {
+                    toggle = true;
+                } else {
+                    let pipe_start = row[x];
+                    while x+1 < row.len() && row[x+1] == '-' {
+                        x+=1;
+                    }
+                    x+=1;
+                    let pipe_end = row[x];
+                    match (pipe_start, pipe_end)  {
+                        ('F','7') | ('L', 'J') => (), // no change.
+                        ('F','J') | ('L', '7') => toggle = true,
+                        _ => panic!("eh?")
+                    }
+                }
+                if toggle {
+                    if scan_state == ScanState::Outside {
+                        scan_state = ScanState::Inside;
+                    } else {
+                        scan_state = ScanState::Outside;
+                    }
+                }
+            }
+            x+=1;
+        }
+    }
+    println!("\ncolored row_scan map:");
+    print_map(&row_scan_map);
+    println!("q2 row scan inner_tiles: {:}\n", inner_tiles);
 }
