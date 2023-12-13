@@ -1,4 +1,7 @@
-use std::fs::read_to_string;
+use cache_macro::cache;
+use lru_cache::LruCache;
+
+use std::{fs::read_to_string, io::Write};
 
 #[derive(Debug)]
 struct Spring {
@@ -6,79 +9,81 @@ struct Spring {
     list: Vec<usize>
 }
 
-fn process_spring(remaining_map: &mut str, remaining_list: &[usize], result: &mut u64) {
-    if remaining_list.iter().map(|x|x+1).sum::<usize>()-1 > remaining_map.len() {
-        return;
-    }
+#[cache(LruCache : LruCache::new(200000))]
+fn process_spring(remaining_map: &mut String, remaining_list: &mut Vec<usize>) -> u64 {
+
     //println!("\nremaining_map: {:?}\nremaining_list: {:?}", remaining_map, remaining_list);
-    let mut consumed_chars = 0;
-    let mut consumed_list = 0;
-    for element in remaining_map.split(|x|x == '.') {
-        if element.len() == 0 {
-            consumed_chars += 1;
-            continue;
+    let mut next_map = remaining_map.clone();
+    let mut next_list = remaining_list.clone();
+
+    loop {
+        //println!("  next_map: {:?}, next_list: {:?}", next_map, next_list);
+        let idx = next_map.find(|x|x != '.').unwrap_or(next_map.len());
+        if idx == next_map.len() {
+            //base case - string ends with '.'
+            if next_list.len() == 0 {
+                return 1;
+            }
+            return 0;
         }
+        next_map = next_map[idx..].to_owned();
+        //println!( "  idx {:} next_map: {:?}", idx, next_map);
+        let idx = next_map.find(|x|x == '.').unwrap_or(next_map.len());
+        let element = next_map[..idx].to_owned();
+        //println !("    element: {:?}", element);
         if !element.contains("?") {
-            if consumed_list == remaining_list.len() {
-                //println!("  base: bad map - not enough springs");
-                return; //base case: bad map - ran out of springs, but still have places to put them.
+            if next_list.is_empty() {
+                return 0; // base case - list is empty, but we found a broken spring.
             }
-            if element.len() != remaining_list[consumed_list] {
-                //println!("  base: bad map - next spring don't match");
-                return; //base case: bad map - next broken spring size doesn't match next list size.
+            if element.len() != next_list[0] {
+                return 0; // base case - next list element doesn't match spring.
             }
-            consumed_chars += element.len() + 1;
-            consumed_list += 1;
+            next_list = next_list[1..].to_vec();
+            next_map = next_map[element.len()..].to_owned();
         } else {
-            if consumed_list < remaining_list.len() {
-                if element.find("?").unwrap() > remaining_list[consumed_list] {
-                    return; // too many broken springs on the front.
-                }
-            }
-            break;
+            break; //recursive case - next element contains a '?'
         }
     }
+    let qidx = next_map.find('?').unwrap();
+    //println!(       "recurse: qidx {:}", qidx);
 
-    //println!("  consumed_chars: {:}", consumed_chars);
-    //println!("  consumed_list: {:}", consumed_list);
+    //assumes ascii
+    unsafe {
+        next_map.as_bytes_mut()[qidx] = '#' as u8;
+    };
+    let res1 = process_spring(&mut next_map, &mut next_list);
 
-    if consumed_list == remaining_list.len() {
-        //base case: good map - exactly consumed the remaining springs with no ? left.
-        *result +=1;
-        return;
-    }
-
-    //recursive case
-    if consumed_chars >= remaining_map.len() {
-        //println!("\nremaining_map: {:?}\nremaining_list: {:?}", remaining_map, remaining_list);
-        return;
-    }
-
-    let next_list = &remaining_list[consumed_list..];
-    let next_map = &mut remaining_map[consumed_chars..];
-    if let Some(qidx) = next_map.find('?') {
-        //assumes ascii
-        unsafe {next_map.as_bytes_mut()[qidx] = '.' as u8};
-        process_spring(next_map, next_list, result);
-        unsafe {next_map.as_bytes_mut()[qidx] = '#' as u8};
-        process_spring(next_map, next_list, result);
-        unsafe {next_map.as_bytes_mut()[qidx] = '?' as u8};
-    }
-
+    unsafe {
+        next_map.as_bytes_mut()[qidx] = '.' as u8;
+    };
+    let res2 = process_spring(&mut next_map, &mut next_list);
+    unsafe {
+        next_map.as_bytes_mut()[qidx] = '?' as u8;
+    };
+    return res1+res2
 }
 
 fn main() {
     let input = read_to_string(".\\src\\test.txt").unwrap();
-    let mut part_1_springs: Vec<Spring> = Vec::new();
-    let mut part_2_springs: Vec<Spring> = Vec::new();
+    let mut spring_maps: Vec<Vec<Spring>> = Vec::new();
+
     for line in input.lines() {
         let mut line_split = line.split_whitespace();
         let mut map: Vec<char> = line_split.next().unwrap().chars().collect();
         let mut list: Vec<usize> = line_split.next().unwrap().split(",").map(|x|x.parse().unwrap()).collect();
 
-        let map1: String = map.clone().iter().collect();
+        let mut line_maps: Vec<Spring> = Vec::new();
 
-        part_1_springs.push(Spring{map: map1.trim_end_matches('.').to_owned(), list: list.clone()});
+        //push bare map
+        let bare = map.clone();
+        let bare:String = bare.iter().collect();
+        line_maps.push(Spring{ map: bare, list: list.clone()});
+
+        //push bare map + ?
+        //let mut bare_plus = map.clone();
+        //bare_plus.push('?');
+        //let bare_plus:String = bare_plus.iter().collect();
+        //line_maps.push(Spring{ map: bare_plus.trim_end_matches('.').to_owned(), list: list.clone()});
 
         let map_len = map.len();
         let list_len = list.len();
@@ -86,32 +91,29 @@ fn main() {
              map.push('?');
              map.extend_from_within(..map_len);
              list.extend_from_within(..list_len);
+
+             let concat_maps:String = map.clone().iter().collect();
+             line_maps.push(Spring{map: concat_maps, list: list.clone()});
+
         }
-
-        let map2: String = map.iter().collect();
-        part_2_springs.push(Spring { map: map2.trim_end_matches('.').to_owned(), list});
+        spring_maps.push(line_maps);
     }
 
-    let mut sum = 0;
-    for spring in part_1_springs.iter_mut() {
-        //println!("checking spring: {:?}", spring);
-        let mut result = 0;
-        process_spring(&mut spring.map, &spring.list, &mut result);
-        //println!("result: {:}", result);
-        sum += result;
+
+    let mut sum1 = 0;
+    let mut sum2 = 0;
+    for (idx,spring_list) in spring_maps.iter_mut().enumerate() {
+        let mut results:Vec<u64> = Vec::new();
+        print!("{:}: {:20} {:?}", idx, spring_list[0].map, spring_list[0].list);
+        for spring in spring_list.iter_mut() {
+            let result = process_spring(&mut spring.map, &mut spring.list);
+            print!("\t{:}", result);
+            let _ = std::io::stdout().flush();
+            results.push(result);
+        }
+        sum1 += results[0];
+        sum2 += results[4];
+        println!()
     }
-
-    println!("q1: {:}", sum);
-
-    let mut sum = 0;
-
-    let spring_count = part_2_springs.len();
-    for (idx,spring) in part_2_springs.iter_mut().enumerate() {
-        println!("checking spring ({:}/{:}): {:?}", idx, spring_count, spring);
-        let mut result = 0;
-        process_spring(&mut spring.map, &spring.list, &mut result);
-        println!("result: {:}", result);
-        sum += result;
-    }
-    println!("q2: {:}", sum);
+    println!("\nq1 sum: {:}, q2 sum: {:}", sum1, sum2);
 }
