@@ -102,6 +102,7 @@ fn main() {
 
     let mut sum1 = 0;
     let mut sum2 = 0;
+    let total_start = Instant::now();
     for (idx,spring_list) in spring_maps.iter_mut().enumerate() {
         let mut results:Vec<u64> = Vec::new();
         print!("{:}: {:20} ", idx, spring_list[0].map);
@@ -118,5 +119,5 @@ fn main() {
         sum2 += results[4];
         println!()
     }
-    println!("\nq1 sum: {:}, q2 sum: {:}", sum1, sum2);
+    println!("\nq1 sum: {:}, q2 sum: {:} total time: {:?}", sum1, sum2, total_start.elapsed());
 }
