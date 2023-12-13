@@ -1,7 +1,7 @@
 use cache_macro::cache;
 use lru_cache::LruCache;
 
-use std::{fs::read_to_string, io::Write};
+use std::{fs::read_to_string, io::Write, time::Instant};
 
 #[derive(Debug)]
 struct Spring {
@@ -104,13 +104,16 @@ fn main() {
     let mut sum2 = 0;
     for (idx,spring_list) in spring_maps.iter_mut().enumerate() {
         let mut results:Vec<u64> = Vec::new();
-        print!("{:}: {:20} {:?}", idx, spring_list[0].map, spring_list[0].list);
+        print!("{:}: {:20} ", idx, spring_list[0].map);
+        let start = Instant::now();
         for spring in spring_list.iter_mut() {
             let result = process_spring(&mut spring.map, &mut spring.list);
-            print!("\t{:}", result);
+            print!("\t{:10}", result);
             let _ = std::io::stdout().flush();
             results.push(result);
         }
+        let elapsed = start.elapsed();
+        print!("\t{:?}", elapsed);
         sum1 += results[0];
         sum2 += results[4];
         println!()
