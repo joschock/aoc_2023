@@ -76,14 +76,11 @@ fn follow_beam(mirror_map: &Vec<Vec<char>>, light_map: &Mutex<Vec<Vec<BTreeSet<D
     }
     let next_directions = next_direction(mirror_map[y][x], entered_from);
     next_directions.par_iter().for_each(|direction|{
-        let contains = {
-            let guard = light_map.lock().unwrap();
-            guard[y][x].contains(&direction)
+        let new_direction = {
+            let mut guard = light_map.lock().unwrap();
+            guard[y][x].insert(direction.clone())
         };
-        if !contains {
-            {
-                light_map.lock().unwrap()[y][x].insert(direction.clone());
-            }
+        if new_direction {
             match direction {
                 Direction::Up => {
                     if y == 0 {
