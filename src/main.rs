@@ -63,7 +63,7 @@ fn get_path_distance(map: &Vec<Vec<usize>>, path: &Vec<(usize, usize)>) -> usize
     distance
 }
 
-fn legal_route(path: &Vec<(usize,usize)>) -> bool {
+fn q1_legal_route(path: &Vec<(usize,usize)>) -> bool {
     if path.len() < 4 {
         return true;
     }
@@ -88,7 +88,7 @@ fn legal_route(path: &Vec<(usize,usize)>) -> bool {
     true
 }
 
-fn dijkstra(map: &Vec<Vec<usize>>, start: (usize, usize), end: (usize, usize)) -> (Vec<Vec<usize>>,Vec<Vec<Vec<(usize, usize)>>>) {
+fn dijkstra(map: &Vec<Vec<usize>>, start: (usize, usize), end: (usize, usize), legal_route: fn(&Vec<(usize,usize)>)->bool) -> (Vec<Vec<usize>>,Vec<Vec<Vec<(usize, usize)>>>) {
     let mut unvisited: BTreeSet<(usize, usize)> = BTreeSet::new();
     let mut distances: Vec<Vec<usize>> = Vec::new();
     let mut source_route: Vec<Vec<Vec<(usize, usize)>>> = Vec::new();
@@ -106,6 +106,7 @@ fn dijkstra(map: &Vec<Vec<usize>>, start: (usize, usize), end: (usize, usize)) -
     let mut current = start;
     unvisited.remove(&current);
     distances[current.1][current.0] = 0;
+    source_route[current.1][current.0] = vec![(0,0)];
 
     for idx in 0usize.. {
         for neighbor in &get_next_paths(&map, current) {
@@ -172,7 +173,7 @@ fn main() {
     let input = read_to_string(".\\src\\test.txt").unwrap();
     let map: Vec<Vec<usize>> = input.lines().map(|x|x.chars().map(|x|x.to_string().parse().unwrap()).collect()).collect();
 
-    let (distances, src_routes) = dijkstra(&map, (0,0), (map[0].len()-1, map.len() -1));
+    let (distances, src_routes) = dijkstra(&map, (0,0), (map[0].len()-1, map.len() -1), q1_legal_route);
     let path_set:BTreeSet<(usize, usize)> = src_routes[map.len()-1][map[0].len()-1].iter().cloned().collect();
     print_distance_map(&distances, false, &path_set);
     println!("q1: {:?}", distances[map.len()-1][map[0].len()-1]);
