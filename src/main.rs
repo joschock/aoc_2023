@@ -1,11 +1,8 @@
-use std::{fs::read_to_string, collections::HashMap};
+use std::{fs::read_to_string, collections::HashMap, ops::Range};
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 struct Part {
-    x: usize,
-    m: usize,
-    a: usize,
-    s: usize
+    ranges: [Range<usize>; 4]
 }
 
 #[derive(Debug)]
@@ -19,11 +16,14 @@ struct Rule {
 fn parse_part(line: &str) -> Part {
     let mut split = line[1..line.len()-1].split(",");
     let x = split.next().unwrap()[2..].parse().unwrap();
+    let x = x..x+1;
     let m = split.next().unwrap()[2..].parse().unwrap();
+    let m = m..m+1;
     let a = split.next().unwrap()[2..].parse().unwrap();
+    let a = a..a+1;
     let s = split.next().unwrap()[2..].parse().unwrap();
-
-    Part {x,m,a,s}
+    let s = s..s+1;
+    Part {ranges: [x,m,a,s]}
 }
 
 fn parse_workflow(line: &str) -> (String, Vec<Rule>) {
@@ -45,42 +45,81 @@ fn parse_workflow(line: &str) -> (String, Vec<Rule>) {
     (key, rules)
 }
 
-fn evaluate_part(part: &Part, workflows: &HashMap<String, Vec<Rule>>) -> usize {
-    let mut current_workflow = "in".to_owned();
+fn split_parts(current_parts: &Part, rule: &Rule) -> (Part, Part) {
+    let split_range = match rule.sample {
+        '.' => return (current_parts.clone(), Default::default()),
+        'x' => 0,
+        'm' => 1,
+        'a' => 2,
+        's' => 3,
+        _ => panic!("eh?")
+    };
 
-    while !(current_workflow == "A" || current_workflow == "R") {
-        let workflow = workflows.get(&current_workflow).unwrap();
-        for rule in workflow {
-            let value = match rule.sample {
-                'x' => part.x,
-                'm' => part.m,
-                'a' => part.a,
-                's' => part.s,
-                '.' => {
-                    current_workflow = rule.dest.clone();
-                    break;
-                }
-                _ => panic!("eh?")
-            };
+    match rule.op {
+        '<' => {
+            let current_start = current_parts.ranges[split_range].start;
+            let current_end = current_parts.ranges[split_range].end;
 
-            let matches = match rule.op {
-                '>' => value > rule.value,
-                '<' => value < rule.value,
-                _ => panic!("eh?")
-            };
+            if rule.value >= current_end {
+                //matches everything in the current range
+                (current_parts.clone(), Default::default())
+            } else if rule.value < current_start {
+                //matches nothing in the current range
+                (Default::default(), current_parts.clone())
+            } else {
+                let mut applied_parts = current_parts.clone();
+                let mut not_applied_parts = current_parts.clone();
 
-            if matches {
-                current_workflow = rule.dest.clone();
-                break;
+                applied_parts.ranges[split_range] = current_start..rule.value;
+                not_applied_parts.ranges[split_range] = rule.value..current_end;
+
+                (applied_parts, not_applied_parts)
             }
-        }
+        },
+        '>' => {
+            let current_start = current_parts.ranges[split_range].start;
+            let current_end = current_parts.ranges[split_range].end;
+
+            if rule.value >= current_end {
+                //matches nothing  in the current range
+                (Default::default(), current_parts.clone())
+            } else if rule.value < current_start {
+                //matches everything in the current range
+                (current_parts.clone(), Default::default())
+            } else {
+                let mut applied_parts = current_parts.clone();
+                let mut not_applied_parts = current_parts.clone();
+
+                applied_parts.ranges[split_range] = rule.value+1..current_end;
+                not_applied_parts.ranges[split_range] = current_start..rule.value+1;
+
+                (applied_parts, not_applied_parts)
+            }
+        },
+        _ => panic!("eh?")
+    }
+}
+
+fn evaluate_part_range(part: &Part, workflow_label: &String, workflows: &HashMap<String, Vec<Rule>>) -> Vec<Part> {
+    //base cases
+    if workflow_label == "A" {
+        return vec![part.clone()];
+    }
+    if workflow_label == "R" {
+        return vec![]
     }
 
-    match current_workflow.as_str() {
-        "A" => part.x + part.m + part.a + part.s,
-        "R" => 0,
-        _=> panic!("eh?")
+    let mut accepted_part_ranges = Vec::new();
+    let mut current_parts = part.clone();
+
+    let workflow = workflows.get(workflow_label).unwrap();
+    for rule in workflow {
+        let applied_parts;
+        (applied_parts, current_parts) = split_parts(&current_parts, rule);
+
+        accepted_part_ranges.extend(evaluate_part_range(&applied_parts, &rule.dest, workflows));
     }
+    accepted_part_ranges.into_iter().filter(|x| x.ranges.iter().all(|y| y.len() > 0)).collect()
 }
 
 fn main() {
@@ -102,9 +141,23 @@ fn main() {
     }
     let mut sum1 = 0;
     for part in parts {
-        let value = evaluate_part(&part, &workflows);
-        //println!("value: {:}", value);
-        sum1+=value;
+        let matching_parts = evaluate_part_range(&part, &"in".to_owned(), &workflows);
+        //println!("matching_parts: {:?}", matching_parts);
+        if !matching_parts.is_empty() {
+            sum1 += part.ranges.iter().map(|x|x.start).sum::<usize>();
+        }
     }
     println!("q1: {:}", sum1);
+
+    let all_parts = Part {ranges: [1..4001, 1..4001, 1..4001, 1..4001]};
+
+    let matching_parts = evaluate_part_range(&all_parts, &"in".to_owned(), &workflows);
+    //println!("matching_parts: {:?}",matching_parts);
+
+    let sum2: usize = matching_parts.iter()
+        .map(|x|{
+            x.ranges.iter().map(|y|y.len()).product::<usize>()
+        }).sum();
+    println!("q2: {:}", sum2);
+
 }
