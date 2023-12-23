@@ -99,6 +99,7 @@ impl Brick {
 
 fn settle(bricks: &mut BTreeSet<Brick>) -> usize {
 
+    //let mut brick_list: Vec<Brick> = bricks.iter().cloned().collect();
     let mut brick_list: Vec<Brick> = Vec::new();
     while let Some(brick) = bricks.pop_first() {
         brick_list.push(brick);
@@ -170,9 +171,9 @@ fn main() {
 
         if moved > 0 {
             println!("-disintegrate");
-            sum1 += 1;
             sum2 += moved;
         } else {
+            sum1 += 1;
             println!("-no disintegrate");
         }
         bricks.insert(candidate);
