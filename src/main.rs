@@ -1,6 +1,7 @@
-use std::{fs::read_to_string, collections::{BTreeMap, BTreeSet}};
+use std::{fs::read_to_string, collections::{BTreeMap, BTreeSet}, time::Instant};
 
-fn next_nodes(map: &Vec<Vec<char>>, x: usize, y: usize, slopes: bool) -> Vec<(usize, usize)> {
+fn next_nodes(map: &Vec<Vec<char>>, pos: (usize, usize), slopes: bool) -> Vec<(usize, usize)> {
+    let (x, y) = pos;
     if slopes {
         //handle special slope case
         match map[y][x] {
@@ -63,111 +64,108 @@ fn next_nodes(map: &Vec<Vec<char>>, x: usize, y: usize, slopes: bool) -> Vec<(us
     .collect()
 }
 
-fn find_next_branch(
-    map: &Vec<Vec<char>>,
-    visited: &mut BTreeSet<(usize, usize)>,
-    start: &(usize, usize),
-    end: (usize, usize),
-    slopes: bool
-) -> Option<((usize, usize), usize)>
-{
-    //println!("   find_branch: {:?}", start);
-    let mut current = *start;
-    let mut current_path = vec![current];
-    let mut candidates;
-    loop {
-        candidates = next_nodes(map, current.0, current.1, slopes);
-        //println!("       candidates: {:?}, current: {:?}", candidates, current);
-        candidates.retain(|x|!visited.contains(x) && !current_path.contains(x));
-        if candidates.len() != 1  {
-            break;
-        }
-        current = candidates.pop().unwrap();
-        current_path.push(current);
-    }
-    //println!("   final candidates: {:?}, current: {:?}", candidates, current);
+#[derive(Debug)]
+struct Edge {
+    _a: (usize, usize),
+    b: (usize, usize),
+    weight: usize
+}
 
-    if candidates.len() != 0 || current == end{
-        Some(((current.0, current.1), current_path.len()))
-    } else {
-        None
+#[derive(Debug)]
+struct Node {
+    _pos: (usize, usize),
+    edges: Vec<Edge>
+}
+
+impl Node {
+    fn degree(&self) -> usize {
+        self.edges.len()
     }
 }
 
-
-fn condense_map(
+fn map_to_graph(
     map: &Vec<Vec<char>>,
-    points: &mut BTreeMap<(usize, usize),BTreeSet<((usize, usize), usize)>>,
     visited: &mut BTreeSet<(usize, usize)>,
     next: (usize, usize),
-    end: (usize, usize),
+    nodes: &mut BTreeMap<(usize, usize), Node>,
     slopes: bool
 ) {
+    visited.insert(next);
 
-    //println!("next: {:?}", next);
-    let candidates = next_nodes(map, next.0, next.1, slopes);
+    let mut node = Node {_pos: next, edges: Vec::new()};
 
-    let candidates:BTreeSet<((usize, usize), usize)> = candidates.iter()
-        .filter_map(
-            |x|{
-                find_next_branch(map, visited, x, end, slopes)
-            }
-        ).collect();
-
-    //println!("  candidates: {:?}", candidates);
-    if !points.contains_key(&next) {
-        points.insert(next, BTreeSet::new());
-    }
-
-    for candidate  in candidates {
-        visited.insert(candidate.0);
-        if !points.contains_key(&candidate.0) {
-            points.insert(candidate.0, BTreeSet::new());
+    for neighbor in next_nodes(map, next, slopes) {
+        node.edges.push(Edge {_a: next, b: neighbor, weight: 1});
+        if !visited.contains(&neighbor) {
+            stacker::maybe_grow(0x8000, 0x100000, ||{
+                map_to_graph(map, visited, neighbor, nodes, slopes);
+            });
         }
+    }
+    nodes.insert(next, node);
+}
 
-        points.get_mut(&next).unwrap().insert(candidate);
-        points.get_mut(&candidate.0).unwrap().insert(((next.0, next.1),candidate.1));
+fn contract_graph(
+    nodes: &mut BTreeMap<(usize, usize), Node>
+) {
 
-        condense_map(map, points, visited, candidate.0, end, slopes);
-        visited.remove(&candidate.0);
+    let positions: Vec<(usize, usize)> = nodes.keys().cloned().collect();
+
+    for pos in positions {
+        if let Some(node) = nodes.get(&pos) {
+            if node.degree() == 2 {
+                //println!("node: {:?}", node);
+                let node = nodes.remove(&pos).unwrap();
+                let n_1 = node.edges[0].b;
+                let n_1_weight = node.edges[1].weight;
+                let n_2 = node.edges[1].b;
+                let n_2_weight = node.edges[0].weight;
+
+                let n_1_node = nodes.get_mut(&n_1).unwrap();
+                //println!("  n1 before: {:?}", n_1_node);
+                if let Some(n_1_edge) = n_1_node.edges.iter_mut().find(|x|x.b == pos) {
+                    n_1_edge.b = n_2;
+                    n_1_edge.weight += n_1_weight;
+                }
+                //println!("  n1 after: {:?}", n_1_node);
+
+                let n_2_node = nodes.get_mut(&n_2).unwrap();
+                //println!("  n2 before: {:?}", n_2_node);
+                if let Some(n_2_edge) = n_2_node.edges.iter_mut().find(|x|x.b == pos) {
+                    n_2_edge.b = n_1;
+                    n_2_edge.weight += n_2_weight;
+                }
+                //println!("  n2 after: {:?}", n_2_node);
+            }
+        }
     }
 }
 
 fn plot_longest_route(
-    points: &mut BTreeMap<(usize, usize),BTreeSet<((usize, usize), usize)>>,
-    visited: &mut BTreeSet<(usize, usize)>,
+    nodes: &mut BTreeMap<(usize, usize), Node>,
     next: (usize, usize),
-    end: (usize, usize),
-) -> Option<(usize, Vec<(usize, usize)>)> {
-    if visited.contains(&next) {
-        return None;
-    }
-
+    end: (usize, usize)
+) -> (usize, Vec<(usize, usize)>) {
     if next == end {
-        //println!("found end");
-        return Some((next.1, vec![end]));
+        return (0, vec![end]);
     }
 
-    visited.insert(next);
-
-    let mut longest_route = 0;
+    let mut longest = 0;
     let mut longest_path = Vec::new();
-    let nodes = points.get(&next).unwrap().clone();
-    //println!("next: {:?}\n\tnodes: {:?}", next, nodes);
-    for node in nodes {
-        //stacker::maybe_grow(0x8000, 0x100000, ||{
-            if let Some((route_len, path)) = plot_longest_route(points, visited, node.0, end) {
-                if route_len > longest_route  && path.contains(&end) {
-                    longest_route = route_len;
+    if let Some(node) = nodes.remove(&next) {
+        for edge in &node.edges {
+            stacker::maybe_grow(0x8000, 0x100000, ||{
+                let (length, path) = plot_longest_route(nodes, edge.b, end);
+                if length  + edge.weight > longest && path.contains(&end){
+                    longest = length  + edge.weight;
                     longest_path = path;
                 }
-            }
-        //});
+            });
+        }
+        nodes.insert(next, node);
     }
-
-    visited.remove(&next);
     longest_path.push(next);
-    Some((longest_route + next.1, longest_path))
+    (longest, longest_path)
 }
 
 fn main() {
@@ -180,33 +178,26 @@ fn main() {
     println!("start: {:?}, end: {:?}", start, end);
     println!("map start: {:?}, map end: {:?}", map[start.1][start.0], map[end.1][end.0]);
 
-    let slopes = true;
-    let mut visited:BTreeSet<(usize, usize)>  = BTreeSet::new();
-    let first_branch = find_next_branch(&map, &mut visited, &start, end, slopes).unwrap();
-    let mut condensed:BTreeMap<(usize, usize),BTreeSet<((usize, usize), usize)>> = BTreeMap::new();
-    let mut first_branch_set = BTreeSet::new();
-    first_branch_set.insert(first_branch);
-    condensed.insert(start, first_branch_set);
-    visited.insert(first_branch.0);
-    condense_map(&map, &mut condensed, &mut visited, first_branch.0, end,slopes);
+    let slopes = false;
+    let mut nodes = BTreeMap::new();
+    println!("generating graph");
+    let start_time = Instant::now();
+    map_to_graph(&map, &mut BTreeSet::new(), start, &mut nodes, slopes);
+    println!("map complete in {:?}", start_time.elapsed());
 
-    for (key, value) in &condensed {
-       println!("point: {:?}", key);
-       println!("  edges: {:?}", value);
-    }
+    println!("contracting graph edges");
+    let start_time = Instant::now();
+    contract_graph(&mut nodes);
+    println!("contraction complete in {:?}", start_time.elapsed());
+    //for node in &nodes {
+    //    println!("{:?}", node);
+    //}
 
-    let (longest_route, mut path) = plot_longest_route(&mut condensed, &mut BTreeSet::new(), start, end).unwrap();
+    println!("plotting longest route");
+    let start_time = Instant::now();
+    let (longest, mut path) = plot_longest_route(&mut nodes, start, end);
+    println!("plot complete in {:?}", start_time.elapsed());
+    println!("longest: {:}", longest);
     path.reverse();
-    println!("longest_route: {:}, {:}, {:?}", longest_route, path.len(), path);
-
-    let mut sum = 0;
-    for idx in 0..path.len()-1 {
-        let node = path[idx];
-        let next_node = path[idx+1];
-        let edges = condensed.get(&node).unwrap();
-        let edge = edges.iter().find(|(x, _)| *x == next_node).unwrap();
-        sum += edge.1;
-        println!("node: {:?} next: {:?} length: {:?}, sum: {:?}", node, next_node, edge.1, sum);
-    }
-
+    println!("path: {:?}", path);
 }
