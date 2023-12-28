@@ -1,222 +1,97 @@
-use std::fs::read_to_string;
+//translated from approach described in https://aoc.csokavar.hu/?day=21
+use std::{fs::read_to_string, collections::HashSet, ops::Add};
 
-fn get_neighbors(map: &Vec<Vec<char>>, x: usize, y: usize) -> Vec<(usize, usize)> {
-    let mut neighbors: Vec<(usize, usize)> = Vec::new();
-
-    if x > 0 {
-        neighbors.push((x - 1, y));
-    }
-    if x < map[0].len() - 1 {
-        neighbors.push((x + 1, y));
-    }
-    if y > 0 {
-        neighbors.push((x, y - 1));
-    }
-    if y < map.len() - 1 {
-        neighbors.push((x, y + 1));
-    }
-
-    neighbors
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Point {
+    y: isize,
+    x: isize,
 }
 
-fn print_map(map: &Vec<Vec<char>>) {
-    for y in 0..map.len() {
-        for x in 0..map[0].len() {
-            print!("{:}", map[y][x]);
-        }
-        println!();
+impl Add for Point {
+    type Output = Point;
+    fn add(self, rhs: Self) -> Self::Output {
+        Point {y: self.y + rhs.y, x: self.x + rhs.x}
     }
 }
 
-fn _print_number_map(map: &Vec<Vec<usize>>) {
-    for y in 0..map.len() {
-        for x in 0..map[0].len() {
-            print!("{:3} ", map[y][x]);
-        }
-        println!();
+impl Point {
+    fn rem_euclid(self, rhs: isize) -> Self {
+        Point {y: self.y.rem_euclid(rhs), x: self.x.rem_euclid(rhs)}
     }
 }
 
-fn generate_step_map(map: &Vec<Vec<char>>, start: (usize, usize), steps: usize) -> Vec<Vec<char>> {
-    let (start_x, start_y) = start;
-    let mut working_map = map.clone();
-    working_map[start_y][start_x] = 'O';
-    for _step in 0..steps {
-        for x in 0..working_map[0].len() {
-            for y in 0..working_map.len() {
-                if working_map[y][x] == 'O' {
-                    working_map[y][x] = 'x';
-                }
-            }
-        }
-        for x in 0..working_map[0].len() {
-            for y in 0..working_map.len() {
-                match working_map[y][x] {
-                    'x' => {
-                        for (n_x, n_y) in get_neighbors(&working_map, x, y) {
-                            match working_map[n_y][n_x] {
-                                '.' => working_map[n_y][n_x] = 'O',
-                                'x' => working_map[n_y][n_x] = '*',
-                                _ => {}
-                            }
-                        }
-                        working_map[y][x] = '.'
-                    }
-                    '*' => {
-                        for (n_x, n_y) in get_neighbors(&working_map, x, y) {
-                            match working_map[n_y][n_x] {
-                                '.' => working_map[n_y][n_x] = 'O',
-                                'x' => working_map[n_y][n_x] = '*',
-                                _ => {}
-                            }
-                        }
-                        working_map[y][x] = 'O'
-                    }
-                    _ => {}
-                }
+
+fn step (valid_points: &HashSet<Point>, current_positions: &HashSet<Point>) -> HashSet<Point> {
+    let directions: [Point; 4] = [
+        Point{y:1, x:0},
+        Point{y:-1, x:0},
+        Point{y:0, x:1},
+        Point{y:0, x:-1}];
+
+    let mut next_positions: HashSet<Point> = HashSet::new();
+
+    for position in current_positions {
+        for direction in directions {
+            let next_pos = *position + direction;
+            let tile_pos = next_pos.rem_euclid(131);
+            if valid_points.contains(&tile_pos) {
+                next_positions.insert(next_pos);
             }
         }
     }
-    working_map
+    next_positions
 }
 
-fn count_map(map: &Vec<Vec<char>>) -> usize {
-    let mut sum1 = 0;
-    for x in 0..map[0].len() {
-        for y in 0..map.len() {
-            if map[y][x] == 'O' {
-                sum1 += 1;
-            }
-        }
-    }
-    sum1
+struct StepIterator {
+    valid_points: HashSet<Point>,
+    positions: HashSet<Point>
 }
+
+impl Iterator for StepIterator {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let result = Some(self.positions.len());
+        self.positions = step(&self.valid_points, &self.positions);
+        result
+    }
+}
+
 
 fn main() {
     let input = read_to_string(".\\src\\test.txt").unwrap();
-    let mut map: Vec<Vec<char>> = input.lines().map(|x| x.chars().collect()).collect();
+    let map: Vec<Vec<char>> = input.lines().map(|x| x.chars().collect()).collect();
 
-    println!("--start---");
-    //print_map(&map);
+    let valid_points: HashSet<Point> = map.iter()
+        .enumerate()
+        .flat_map(|(row, values)|{
+            values.iter().enumerate().filter_map(move |(col, value)|{
+                if *value != '#' {
+                    Some(Point {y: row as isize, x: col as isize})
+                } else {
+                    None
+                }
+            })
+        })
+        .collect();
+    let start_position: HashSet<Point> = [Point {x:65, y:65}].into_iter().collect();
+    let step_iterator = StepIterator {valid_points: valid_points, positions: start_position};
+    let steps: Vec<usize> = step_iterator.take(328).collect();
 
-    let start_x = map.len()/2;
-    let start_y = map.len()/2;
+    println!("q1: {:?}", steps[64]);
 
-    assert_eq!(map[start_y][start_x], 'S');
-    map[start_y][start_x] = '.';
+    let (x0, y0) = (65 as f64, steps[65] as f64);
+    let (x1, y1) = (196 as f64, steps[196] as f64);
+    let (x2, y2) = (327 as f64, steps[327] as f64);
 
-    let step_map = generate_step_map(&map, (start_x, start_y), 64);
-    println!("q1: {:?}", count_map(&step_map));
+    let y01 = (y1 - y0)/(x1 -x0);
+    let y12 = (y2 - y1)/(x2 - x1);
+    let y012 = (y12 - y01) / (x2 - x0);
 
-    //       a
-    //      bfd
-    //      ecg
-    //     bcfcd
-    //     efcfg
-    //    bfcfcfd
-    //    ecfcfcg
-    //   bcfcfcfcd
-    //   efcfcfcfg
-    //  hfcfcfcfcfi
-    //   lfcfcfcfm
-    //   jcfcfcfck
-    //    lcfcfcm
-    //    jfcfcfk
-    //     lfcfm
-    //     jcfck
-    //      lcm
-    //      jfk
-    //       n
+    let step_count:f64 = 26501365f64;
 
-    //steps = a + h + i + n; // points
-    //steps += (b + d + e + g + j + k + l + m) * ((steps - map.len() /2)/map.len() - 1); //outside slopes.
-    //steps += (f+c) * ((steps - map.len() /2)/map.len() - 1) * 4 + f //cross
-    //base = ((steps - map.len() /2)/map.len() - 2)
-    //steps += (f+c) * base(base+1)/2 * 4 //whole tile quadrants.
+    let result = y0 + y01 * (step_count - x0) + y012 *(step_count - x0)*(step_count - x1);
 
-    let map_a = generate_step_map(&map, (start_x, step_map.len()-1), step_map.len()-1);
-    //print_map(&map_a);
-    let a = count_map(&map_a);
-    println!("map a: {:?}", a);
+    println!("q2: {:?}", result);
 
-    let map_b = generate_step_map(&map, (map.len()-1, map.len()-1), step_map.len()/2);
-    //print_map(&map_b);
-    let b = count_map(&map_b);
-    println!("map b: {:?}", b);
-
-    let map_c = generate_step_map(&map, (start_x, start_y), step_map.len()+1);
-    //print_map(&map_c);
-    let c = count_map(&map_c);
-    println!("map c: {:?}", c);
-
-    let map_d = generate_step_map(&map, (0, map.len()-1), step_map.len()/2);
-    //print_map(&map_d);
-    let d = count_map(&map_d);
-    println!("map d: {:?}", d);
-
-    let map_e = generate_step_map(&map, (map.len()-1, map.len()-1), step_map.len() + step_map.len()/2);
-    //print_map(&map_e);
-    let e = count_map(&map_e);
-    println!("map e: {:?}", e);
-
-    let map_f = generate_step_map(&map, (start_x, start_y), step_map.len());
-    //print_map(&map_f);
-    let f = count_map(&map_f);
-    println!("map f: {:?}", f);
-
-    let map_g = generate_step_map(&map, (0, map.len()-1), step_map.len() + step_map.len()/2);
-    //print_map(&map_g);
-    let g = count_map(&map_g);
-    println!("map g: {:?}", g);
-
-    let map_h = generate_step_map(&map, (map.len()-1, start_y), step_map.len() - 1);
-    //print_map(&map_h);
-    let h = count_map(&map_h);
-    println!("map h: {:?}", h);
-
-    let map_i = generate_step_map(&map, (0, start_y), step_map.len() - 1);
-    //print_map(&map_i);
-    let i = count_map(&map_i);
-    println!("map i: {:?}", i);
-
-    let map_j = generate_step_map(&map, (map.len()-1, 0), step_map.len()/2);
-    //print_map(&map_j);
-    let j = count_map(&map_j);
-    println!("map j: {:?}", j);
-
-    let map_k = generate_step_map(&map, (0, 0), step_map.len()/2);
-    //print_map(&map_k);
-    let k = count_map(&map_k);
-    println!("map k: {:?}", k);
-
-    let map_l = generate_step_map(&map, (map.len()-1, 0), step_map.len() + step_map.len()/2);
-    //print_map(&map_l);
-    let l = count_map(&map_l);
-    println!("map l: {:?}", l);
-
-    let map_m = generate_step_map(&map, (0, 0), step_map.len() + step_map.len()/2);
-    //print_map(&map_m);
-    let m = count_map(&map_m);
-    println!("map m: {:?}", m);
-
-    let map_n = generate_step_map(&map, (start_x, 0), step_map.len()-1);
-    //print_map(&map_n);
-    let n = count_map(&map_n);
-    println!("map n: {:?}", n);
-
-    let step_count = 26501365;
-
-    //spots = a + h + i + n; // points
-    //spots += (b + d + e + g + j + k + l + m) * ((step_count - map.len() /2)/map.len() - 1); //outside slopes.
-    //spots += (f+c) * ((step_count - map.len() /2)/map.len() - 1) * 4 + f //cross
-    //base = ((step_count - map.len() /2)/map.len() - 2)
-    //spots += (f+c) * base(base+1)/2 * 4 //whole tile quadrants.
-    let base = (step_count - map.len()/2)/map.len() - 1;
-    let mut spots = a + h + i + n; //points
-    spots += (b + d + e + g + j + k + l + m) * base; //outside slopes.
-    spots += (f+c) * base * 4 + f; //cross.
-    let qbase = base - 1;
-    spots += (f+c) * (qbase * (qbase + 1))/2 *4; //quadrants.
-
-    println!("spots: {:?}", spots);
 }
